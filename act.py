@@ -11,11 +11,29 @@ from kivy.clock import Clock
 import sqlite3
 import os
 from datetime import datetime
+import hashlib
+
+# --------------------------
+#   GLOBAL UI COLORS
+# --------------------------
+PRIMARY = (0.1, 0.5, 0.8, 1)      # Blue
+SECONDARY = (0.2, 0.7, 0.6, 1)    # Teal
+BG_COLOR = (0.95, 0.95, 0.95, 1)  # Light Gray
+BTN_TEXT = (1, 1, 1, 1)           # White text
 
 Window.size = (400, 600)
+Window.clearcolor = BG_COLOR
 
 current_user = None
 DB_FILE = 'app_data.db'
+
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def verify_password(password, hashed):
+    return hash_password(password) == hashed
 
 
 def setup_db():
@@ -38,6 +56,14 @@ def setup_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )''')
         
+        c.execute('''CREATE TABLE IF NOT EXISTS profiles (
+            id INTEGER PRIMARY KEY,
+            email TEXT UNIQUE,
+            bio TEXT,
+            join_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(email) REFERENCES users(email)
+        )''')
+        
         conn.commit()
         conn.close()
         return True
@@ -50,8 +76,9 @@ def insert_user(name, email, password, phone):
     try:
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
+        hashed_pass = hash_password(password)
         c.execute("INSERT INTO users (name, email, password, phone) VALUES (?, ?, ?, ?)",
-                  (name, email, password, phone))
+                  (name, email, hashed_pass, phone))
         conn.commit()
         conn.close()
         return True
@@ -63,10 +90,12 @@ def check_user(email, password):
     try:
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT name FROM users WHERE email=? AND password=?", (email, password))
+        c.execute("SELECT name, password FROM users WHERE email=?", (email,))
         result = c.fetchone()
         conn.close()
-        return result[0] if result else None
+        if result and verify_password(password, result[1]):
+            return result[0]
+        return None
     except:
         return None
 
@@ -109,33 +138,74 @@ def get_messages():
         return []
 
 
+def get_profile(email):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT users.name, users.phone, profiles.bio, profiles.join_date FROM users LEFT JOIN profiles ON users.email = profiles.email WHERE users.email = ?", (email,))
+        result = c.fetchone()
+        conn.close()
+        return result
+    except:
+        return None
+
+
+def update_profile(email, bio):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO profiles (email, bio) VALUES (?, ?)", (email, bio))
+        conn.commit()
+        conn.close()
+        return True
+    except:
+        return False
+
+
+def get_user_email(name):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT email FROM users WHERE name = ?", (name,))
+        result = c.fetchone()
+        conn.close()
+        return result[0] if result else None
+    except:
+        return None
+
+
+# --------------------------
+#       SCREENS
+# --------------------------
+
 class HomeScreen(Screen):
     def build(self):
         layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
         
-        layout.add_widget(Label(text='User Management', size_hint_y=0.15, font_size='24sp', bold=True))
-        layout.add_widget(Label(text='With Chat Room', size_hint_y=0.05, font_size='12sp'))
+        layout.add_widget(Label(text='User Management', font_size='26sp', bold=True, color=PRIMARY))
+        layout.add_widget(Label(text='Chat + Profiles', font_size='14sp', color=(0, 0, 0, 1)))
         
-        btn_layout = BoxLayout(orientation='vertical', size_hint_y=0.7, spacing=10)
+        btn_layout = BoxLayout(orientation='vertical', spacing=10)
         
-        btn1 = Button(text='Register', size_hint_y=0.25)
-        btn1.bind(on_press=self.go_register)
-        btn_layout.add_widget(btn1)
+        def make_btn(text, action):
+            btn = Button(text=text, size_hint_y=0.17,
+                         background_color=PRIMARY, color=BTN_TEXT)
+            btn.bind(on_press=action)
+            return btn
         
-        btn2 = Button(text='Login', size_hint_y=0.25)
-        btn2.bind(on_press=self.go_login)
-        btn_layout.add_widget(btn2)
+        btn_layout.add_widget(make_btn('Register', self.go_register))
+        btn_layout.add_widget(make_btn('Login', self.go_login))
+        btn_layout.add_widget(make_btn('View Users', self.go_view))
+        btn_layout.add_widget(make_btn('Chat Room', self.go_chat))
         
-        btn3 = Button(text='View Users', size_hint_y=0.25)
-        btn3.bind(on_press=self.go_view)
-        btn_layout.add_widget(btn3)
-        
-        btn4 = Button(text='Chat Room', size_hint_y=0.25)
-        btn4.bind(on_press=self.go_chat)
-        btn_layout.add_widget(btn4)
+        profile_btn = Button(text='👤 My Profile',
+                             size_hint_y=0.2,
+                             background_color=SECONDARY,
+                             color=BTN_TEXT)
+        profile_btn.bind(on_press=self.go_profile)
+        btn_layout.add_widget(profile_btn)
         
         layout.add_widget(btn_layout)
-        
         self.add_widget(layout)
     
     def go_register(self, obj):
@@ -150,46 +220,45 @@ class HomeScreen(Screen):
     def go_chat(self, obj):
         if current_user:
             self.manager.current = 'chat'
+    
+    def go_profile(self, obj):
+        if current_user:
+            self.manager.current = 'profile'
 
 
 class RegisterScreen(Screen):
     def build(self):
         layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-        layout.add_widget(Label(text='Register', font_size='20sp', bold=True, size_hint_y=0.1))
-        
-        layout.add_widget(Label(text='Name:', size_hint_y=0.08))
-        self.name_input = TextInput(multiline=False, size_hint_y=0.08)
-        layout.add_widget(self.name_input)
-        
-        layout.add_widget(Label(text='Email:', size_hint_y=0.08))
-        self.email_input = TextInput(multiline=False, size_hint_y=0.08)
-        layout.add_widget(self.email_input)
-        
-        layout.add_widget(Label(text='Password:', size_hint_y=0.08))
-        self.pass_input = TextInput(password=True, multiline=False, size_hint_y=0.08)
+
+        layout.add_widget(Label(text='Register', font_size='22sp', bold=True, color=PRIMARY))
+
+        def make_input(label):
+            layout.add_widget(Label(text=label, color=(0, 0, 0, 1)))
+            inp = TextInput(multiline=False, background_color=(1,1,1,1))
+            layout.add_widget(inp)
+            return inp
+
+        self.name_input = make_input("Name:")
+        self.email_input = make_input("Email:")
+        self.pass_input = TextInput(password=True, multiline=False, background_color=(1,1,1,1))
+        layout.add_widget(Label(text="Password:", color=(0,0,0,1)))
         layout.add_widget(self.pass_input)
-        
-        layout.add_widget(Label(text='Phone:', size_hint_y=0.08))
-        self.phone_input = TextInput(multiline=False, size_hint_y=0.08)
-        layout.add_widget(self.phone_input)
-        
-        self.msg = Label(text='', size_hint_y=0.1, font_size='12sp')
+        self.phone_input = make_input("Phone:")
+
+        self.msg = Label(text='', color=(1, 0, 0, 1))
         layout.add_widget(self.msg)
-        
-        btn_layout = BoxLayout(size_hint_y=0.15, spacing=10)
-        btn_submit = Button(text='Register')
-        btn_submit.bind(on_press=self.register)
-        btn_layout.add_widget(btn_submit)
-        
-        btn_back = Button(text='Back')
-        btn_back.bind(on_press=self.go_back)
-        btn_layout.add_widget(btn_back)
-        
-        layout.add_widget(btn_layout)
-        layout.add_widget(Label(size_hint_y=0.15))
-        
+
+        btn_row = BoxLayout(spacing=10)
+        reg_btn = Button(text="Register", background_color=PRIMARY, color=BTN_TEXT)
+        reg_btn.bind(on_press=self.register)
+        back_btn = Button(text="Back", background_color=SECONDARY, color=BTN_TEXT)
+        back_btn.bind(on_press=self.go_back)
+        btn_row.add_widget(reg_btn)
+        btn_row.add_widget(back_btn)
+
+        layout.add_widget(btn_row)
         self.add_widget(layout)
-    
+
     def register(self, obj):
         name = self.name_input.text.strip()
         email = self.email_input.text.strip()
@@ -204,14 +273,18 @@ class RegisterScreen(Screen):
             self.msg.text = 'Invalid email!'
             return
         
+        if len(password) < 6:
+            self.msg.text = 'Password must be 6+ chars!'
+            return
+        
         if insert_user(name, email, password, phone):
-            self.msg.text = 'Registered!'
+            self.msg.text = 'Registered successfully!'
             self.name_input.text = ''
             self.email_input.text = ''
             self.pass_input.text = ''
             self.phone_input.text = ''
         else:
-            self.msg.text = 'Email exists!'
+            self.msg.text = 'Email already exists!'
     
     def go_back(self, obj):
         self.manager.current = 'home'
@@ -220,31 +293,29 @@ class RegisterScreen(Screen):
 class LoginScreen(Screen):
     def build(self):
         layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-        layout.add_widget(Label(text='Login', font_size='20sp', bold=True, size_hint_y=0.1))
         
-        layout.add_widget(Label(text='Email:', size_hint_y=0.1))
-        self.email_input = TextInput(multiline=False, size_hint_y=0.1)
+        layout.add_widget(Label(text='Login', font_size='22sp', bold=True, color=PRIMARY))
+        
+        layout.add_widget(Label(text='Email:', color=(0,0,0,1)))
+        self.email_input = TextInput(background_color=(1,1,1,1))
         layout.add_widget(self.email_input)
         
-        layout.add_widget(Label(text='Password:', size_hint_y=0.1))
-        self.pass_input = TextInput(password=True, multiline=False, size_hint_y=0.1)
+        layout.add_widget(Label(text='Password:', color=(0,0,0,1)))
+        self.pass_input = TextInput(password=True, background_color=(1,1,1,1))
         layout.add_widget(self.pass_input)
         
-        self.msg = Label(text='', size_hint_y=0.2, font_size='12sp')
+        self.msg = Label(text='', color=(1, 0, 0, 1))
         layout.add_widget(self.msg)
         
-        btn_layout = BoxLayout(size_hint_y=0.15, spacing=10)
-        btn_login = Button(text='Login')
-        btn_login.bind(on_press=self.login)
-        btn_layout.add_widget(btn_login)
+        btn_row = BoxLayout(spacing=10)
+        login_btn = Button(text='Login', background_color=PRIMARY, color=BTN_TEXT)
+        login_btn.bind(on_press=self.login)
+        back_btn = Button(text='Back', background_color=SECONDARY, color=BTN_TEXT)
+        back_btn.bind(on_press=self.go_back)
+        btn_row.add_widget(login_btn)
+        btn_row.add_widget(back_btn)
         
-        btn_back = Button(text='Back')
-        btn_back.bind(on_press=self.go_back)
-        btn_layout.add_widget(btn_back)
-        
-        layout.add_widget(btn_layout)
-        layout.add_widget(Label(size_hint_y=0.15))
-        
+        layout.add_widget(btn_row)
         self.add_widget(layout)
     
     def login(self, obj):
@@ -267,7 +338,7 @@ class LoginScreen(Screen):
 class ViewUsersScreen(Screen):
     def build(self):
         layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-        layout.add_widget(Label(text='All Users', font_size='20sp', bold=True, size_hint_y=0.1))
+        layout.add_widget(Label(text='All Users', font_size='22sp', bold=True, color=PRIMARY))
         
         users = get_users()
         
@@ -277,7 +348,7 @@ class ViewUsersScreen(Screen):
         
         if users:
             for user in users:
-                lbl = Label(text=f"{user[0]} - {user[1]}", size_hint_y=None, height=40, font_size='10sp')
+                lbl = Label(text=f"{user[0]} - {user[1]}", size_hint_y=None, height=40, font_size='12sp')
                 user_layout.add_widget(lbl)
         else:
             user_layout.add_widget(Label(text='No users!', size_hint_y=None, height=40))
@@ -285,7 +356,7 @@ class ViewUsersScreen(Screen):
         scroll.add_widget(user_layout)
         layout.add_widget(scroll)
         
-        btn_back = Button(text='Back', size_hint_y=0.1)
+        btn_back = Button(text='Back', size_hint_y=0.1, background_color=SECONDARY, color=BTN_TEXT)
         btn_back.bind(on_press=self.go_back)
         layout.add_widget(btn_back)
         
@@ -297,50 +368,55 @@ class ViewUsersScreen(Screen):
 
 class ChatScreen(Screen):
     def build(self):
-        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
         
-        header = BoxLayout(size_hint_y=0.08, spacing=10)
-        header.add_widget(Label(text=f'Chat - {current_user}', font_size='16sp', bold=True))
+        header = BoxLayout(size_hint_y=0.1)
+        header.add_widget(Label(text='💬 Chat Room', font_size='20sp', color=PRIMARY))
+        header.add_widget(Label(text=f'User: {current_user}', font_size='12sp'))
         layout.add_widget(header)
         
         self.scroll = ScrollView(size_hint_y=0.7)
-        self.chat_layout = BoxLayout(orientation='vertical', size_hint_y=None, spacing=5)
+        self.chat_layout = BoxLayout(orientation='vertical', size_hint_y=None, spacing=8)
         self.chat_layout.bind(minimum_height=self.chat_layout.setter('height'))
         self.scroll.add_widget(self.chat_layout)
         layout.add_widget(self.scroll)
         
-        input_layout = BoxLayout(size_hint_y=0.15, spacing=5)
-        self.msg_input = TextInput(multiline=False, hint_text='Type message...')
-        input_layout.add_widget(self.msg_input)
-        
-        send_btn = Button(text='Send', size_hint_x=0.2)
+        input_row = BoxLayout(size_hint_y=0.15, spacing=8)
+        self.msg_input = TextInput(background_color=(1,1,1,1))
+        send_btn = Button(text='Send', background_color=PRIMARY, color=BTN_TEXT)
         send_btn.bind(on_press=self.send_message)
-        input_layout.add_widget(send_btn)
         
-        layout.add_widget(input_layout)
+        input_row.add_widget(self.msg_input)
+        input_row.add_widget(send_btn)
+        layout.add_widget(input_row)
         
-        btn_back = Button(text='Exit Chat', size_hint_y=0.07)
-        btn_back.bind(on_press=self.go_back)
-        layout.add_widget(btn_back)
+        back_btn = Button(text='Back', background_color=SECONDARY, color=BTN_TEXT)
+        back_btn.bind(on_press=self.go_back)
+        layout.add_widget(back_btn)
         
         self.add_widget(layout)
     
     def on_enter(self):
         self.load_messages()
-        Clock.schedule_interval(self.load_messages, 2)
+        Clock.schedule_interval(self.load_messages, 1)
     
     def on_leave(self):
-        Clock.unschedule(self.load_messages)
+        try:
+            Clock.unschedule(self.load_messages)
+        except:
+            pass
     
     def load_messages(self, *args):
         self.chat_layout.clear_widgets()
         messages = get_messages()
         
-        for msg in messages:
-            user_name, message, timestamp = msg
-            time_str = str(timestamp)[11:16] if timestamp else ''
-            text = f"{user_name} ({time_str}): {message}"
-            lbl = Label(text=text, size_hint_y=None, height=40, font_size='10sp')
+        for user_name, message, timestamp in messages:
+            time_str = str(timestamp)[11:16]
+            
+            color = PRIMARY if user_name == current_user else SECONDARY
+            lbl = Label(text=f"{user_name}: {message}\n[{time_str}]",
+                        size_hint_y=None, height=60,
+                        color=color)
             self.chat_layout.add_widget(lbl)
         
         self.scroll.scroll_y = 0
@@ -361,32 +437,94 @@ class ChatScreen(Screen):
         self.manager.current = 'home'
 
 
+class ProfileScreen(Screen):
+    def build(self):
+        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+        
+        layout.add_widget(Label(text='👤 My Profile', font_size='22sp', bold=True, color=PRIMARY))
+        
+        scroll = ScrollView()
+        info_layout = BoxLayout(orientation='vertical', size_hint_y=None, spacing=10)
+        info_layout.bind(minimum_height=info_layout.setter('height'))
+        
+        self.name_label = Label(text='Name:', size_hint_y=None, height=40)
+        self.email_label = Label(text='Email:', size_hint_y=None, height=40)
+        self.phone_label = Label(text='Phone:', size_hint_y=None, height=40)
+        self.join_label = Label(text='Joined:', size_hint_y=None, height=40)
+        
+        info_layout.add_widget(self.name_label)
+        info_layout.add_widget(self.email_label)
+        info_layout.add_widget(self.phone_label)
+        info_layout.add_widget(self.join_label)
+        
+        info_layout.add_widget(Label(text='Bio:', height=30, size_hint_y=None))
+        
+        self.bio_input = TextInput(height=100, size_hint_y=None, background_color=(1,1,1,1))
+        info_layout.add_widget(self.bio_input)
+        
+        scroll.add_widget(info_layout)
+        layout.add_widget(scroll)
+        
+        btn_row = BoxLayout(size_hint_y=0.15, spacing=10)
+        
+        save_btn = Button(text='Save Bio', background_color=PRIMARY, color=BTN_TEXT)
+        save_btn.bind(on_press=self.save_bio)
+        
+        back_btn = Button(text='Back', background_color=SECONDARY, color=BTN_TEXT)
+        back_btn.bind(on_press=self.go_back)
+        
+        btn_row.add_widget(save_btn)
+        btn_row.add_widget(back_btn)
+        
+        layout.add_widget(btn_row)
+        
+        self.add_widget(layout)
+    
+    def on_enter(self):
+        email = get_user_email(current_user)
+        profile = get_profile(email)
+        
+        if profile:
+            name, phone, bio, join_date = profile
+            self.name_label.text = f'Name: {name}'
+            self.email_label.text = f'Email: {email}'
+            self.phone_label.text = f'Phone: {phone if phone else "Not set"}'
+            self.join_label.text = f'Joined: {str(join_date)[:10]}'
+            self.bio_input.text = bio if bio else ''
+    
+    def save_bio(self, obj):
+        email = get_user_email(current_user)
+        bio = self.bio_input.text.strip()
+        
+        if update_profile(email, bio):
+            self.bio_input.hint_text = 'Saved!'
+        else:
+            self.bio_input.hint_text = 'Error'
+    
+    def go_back(self, obj):
+        self.manager.current = 'home'
+
+
 class MyApp(App):
     def build(self):
         setup_db()
-        self.title = 'User Management + Chat'
+        self.title = 'User Management + Chat + Profiles'
         
         sm = ScreenManager()
         
-        home = HomeScreen(name='home')
-        home.build()
-        sm.add_widget(home)
-        
-        register = RegisterScreen(name='register')
-        register.build()
-        sm.add_widget(register)
-        
-        login = LoginScreen(name='login')
-        login.build()
-        sm.add_widget(login)
-        
-        view = ViewUsersScreen(name='view')
-        view.build()
-        sm.add_widget(view)
-        
-        chat = ChatScreen(name='chat')
-        chat.build()
-        sm.add_widget(chat)
+        screens = [
+            (HomeScreen, 'home'),
+            (RegisterScreen, 'register'),
+            (LoginScreen, 'login'),
+            (ViewUsersScreen, 'view'),
+            (ChatScreen, 'chat'),
+            (ProfileScreen, 'profile')
+        ]
+
+        for scr, name in screens:
+            s = scr(name=name)
+            s.build()
+            sm.add_widget(s)
         
         return sm
 
