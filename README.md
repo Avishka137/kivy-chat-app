@@ -40,8 +40,6 @@ A real-time chat application built with **Python** and **Kivy**, featuring a mod
 - 💬 **Real-time Messaging** - Instant message delivery
 - 👤 **User Authentication** - Secure login and registration
 - 🎨 **Modern UI/UX** - Beautiful Material Design interface
-- 📱 **Cross-Platform** - Runs on Windows, macOS, Linux, Android, and iOS
-- 🌙 **Dark Mode** - Eye-friendly dark theme support
 - 📝 **Message History** - Save and view conversation history
 - 🔔 **Notifications** - Get notified of new messages
 - 👥 **Multiple Chats** - Support for multiple conversations
@@ -159,35 +157,6 @@ requests>=2.28.0
 python-socketio>=5.7.0
 cryptography>=38.0.0
 ```
-
----
-
-## 📦 Project Structure
-
-```
-kivy-chat-app/
-├── main.py                 # Application entry point
-├── requirements.txt        # Python dependencies
-├── config.py              # Configuration settings
-├── screens/               # UI screens
-│   ├── login_screen.py
-│   ├── chat_screen.py
-│   └── settings_screen.py
-├── widgets/               # Custom widgets
-│   ├── message_bubble.py
-│   └── chat_list.py
-├── utils/                 # Utility functions
-│   ├── database.py
-│   └── encryption.py
-├── assets/                # Images, fonts, icons
-│   ├── images/
-│   └── fonts/
-└── README.md
-```
-
----
-
-## 🔧 Building for Different Platforms
 
 ### Windows Executable
 
