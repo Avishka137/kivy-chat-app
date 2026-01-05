@@ -8,12 +8,10 @@
 [![Kivy](https://img.shields.io/badge/Kivy-2.0+-3E8EDE?style=for-the-badge&logo=python&logoColor=white)](https://kivy.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
-[Demo](https://your-demo-link.com) • [Report Bug](https://github.com/avishka137/yourrepo/issues) • [Request Feature](https://github.com/avishka137/yourrepo/issues)
 
 ![Chat App Screenshot](path/to/screenshot.png)
 
 </div>
-
 ---
 
 ## 📋 Table of Contents
