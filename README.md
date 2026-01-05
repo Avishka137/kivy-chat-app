@@ -12,7 +12,7 @@
 ![Chat App Screenshot](path/to/screenshot.png)
 
 </div>
----
+
 
 ## 📋 Table of Contents
 
@@ -24,8 +24,6 @@
 - [Built With](#-built-with)
 - [Contributing](#-contributing)
 - [License](#-license)
-
----
 
 ## 🎯 About
 
@@ -50,7 +48,6 @@ A real-time chat application built with **Python** and **Kivy**, featuring a mod
 Follow these steps to get the chat app running on your local machine.
 
 ### Prerequisites
-
 Make sure you have Python installed on your system:
 
 ```bash
