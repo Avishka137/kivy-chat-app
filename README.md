@@ -15,7 +15,6 @@
 
 
 ## 📋 Table of Contents
-
 - [About](#-about)
 - [Features](#-features)
 - [Getting Started](#-getting-started)
@@ -26,7 +25,6 @@
 - [License](#-license)
 
 ## 🎯 About
-
 A real-time chat application built with **Python** and **Kivy**, featuring a modern and intuitive user interface. This cross-platform application provides seamless messaging capabilities with a beautiful Material Design-inspired UI.
 
 ---
