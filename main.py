@@ -22,29 +22,66 @@ import hashlib
 import shutil
 
 # ── Blue + Teal Ocean Palette ───────────────────────────────────────────────────
-PRIMARY      = (0.10, 0.38, 0.78, 1)   # ocean blue
-PRIMARY_DARK = (0.05, 0.20, 0.48, 1)   # deep navy
-PRIMARY_LIGHT= (0.58, 0.82, 0.96, 1)   # sky blue
-ACCENT       = (0.22, 0.52, 0.90, 1)   # medium blue (replaces teal/green)
-ACCENT2      = (0.06, 0.28, 0.62, 1)   # darker blue
-BG_LIGHT     = (0.93, 0.95, 0.98, 1)   # soft blue-grey background
-CARD_BG      = (1,    1,    1,    1)   # white
-TEXT_DARK    = (0.07, 0.17, 0.27, 1)   # dark navy text
-TEXT_MUTED   = (0.45, 0.55, 0.65, 1)   # muted grey
+PRIMARY      = (0.10, 0.38, 0.78, 1)
+PRIMARY_DARK = (0.05, 0.20, 0.48, 1)
+PRIMARY_LIGHT= (0.58, 0.82, 0.96, 1)
+ACCENT       = (0.22, 0.52, 0.90, 1)
+ACCENT2      = (0.06, 0.28, 0.62, 1)
+BG_LIGHT     = (0.93, 0.95, 0.98, 1)
+CARD_BG      = (1,    1,    1,    1)
+TEXT_DARK    = (0.07, 0.17, 0.27, 1)
+TEXT_MUTED   = (0.45, 0.55, 0.65, 1)
 WHITE        = (1,    1,    1,    1)
-DANGER       = (0.75, 0.15, 0.15, 1)   # red for errors only
-SUCCESS      = (0.22, 0.52, 0.90, 1)   # blue for success
-NAME_COLOR   = (0.98, 0.75, 0.10, 1)   # warm amber for logged-in name
+DANGER       = (0.75, 0.15, 0.15, 1)
+SUCCESS      = (0.22, 0.52, 0.90, 1)
+NAME_COLOR   = (0.98, 0.75, 0.10, 1)
+ADMIN_COLOR  = (0.80, 0.10, 0.80, 1)
+
+# ── Unique user colors for chat ────────────────────────────────────────────────
+USER_COLORS = [
+    (0.22, 0.52, 0.90, 1),  # Blue
+    (0.06, 0.70, 0.50, 1),  # Teal
+    (0.85, 0.30, 0.35, 1),  # Coral
+    (0.40, 0.60, 0.90, 1),  # Sky Blue
+    (0.10, 0.60, 0.75, 1),  # Dark Teal
+    (0.90, 0.50, 0.20, 1),  # Orange
+    (0.50, 0.20, 0.70, 1),  # Purple
+    (0.20, 0.75, 0.60, 1),  # Mint
+    (0.75, 0.35, 0.60, 1),  # Rose
+    (0.30, 0.50, 0.80, 1),  # Periwinkle
+]
 
 Window.size = (400, 700)
 Window.clearcolor = (0.93, 0.95, 0.98, 1)
 
-current_user = None
+# ── ADMIN CREDENTIALS ──────────────────────────────────────────────────────────
+ADMIN_EMAIL    = "admin@userhub.com"
+ADMIN_PASSWORD = "Admin@1234"
+ADMIN_NAME     = "Administrator"
+
+current_user       = None
+current_user_email = None
+is_admin           = False
+user_color_map     = {}  # Map user names to colors
+
 DB_FILE = os.path.join(os.path.expanduser('~'), 'Documents', 'user_app_database.db')
 PROFILE_PICS_DIR = os.path.join(os.path.expanduser('~'), 'Documents', 'user_app_profile_pics')
 
 if not os.path.exists(PROFILE_PICS_DIR):
     os.makedirs(PROFILE_PICS_DIR)
+
+
+# ── Color assignment system ────────────────────────────────────────────────────
+def assign_user_color(user_name):
+    """Assign a unique color to a user based on their name"""
+    if user_name not in user_color_map:
+        color_idx = sum(ord(c) for c in user_name) % len(USER_COLORS)
+        user_color_map[user_name] = USER_COLORS[color_idx]
+    return user_color_map[user_name]
+
+def get_user_color(user_name):
+    """Get the assigned color for a user"""
+    return assign_user_color(user_name)
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -63,7 +100,7 @@ def setup_db():
             test_conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
             test_conn.close()
             database_valid = True
-        except Exception as e:
+        except:
             database_valid = False
     if not database_valid:
         for db_file in db_files:
@@ -80,7 +117,9 @@ def setup_db():
         c.execute('''CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL, phone TEXT)''')
+            password TEXT NOT NULL, phone TEXT,
+            is_admin INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
         c.execute('''CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_name TEXT NOT NULL, message TEXT NOT NULL,
@@ -95,7 +134,21 @@ def setup_db():
             email TEXT NOT NULL, post_text TEXT NOT NULL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(email) REFERENCES users(email))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS user_actions_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_email TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_user TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
         conn.commit()
+
+        # Insert admin user if not exists
+        c.execute("SELECT id FROM users WHERE email=?", (ADMIN_EMAIL,))
+        if not c.fetchone():
+            c.execute("INSERT INTO users (name, email, password, phone, is_admin, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                      (ADMIN_NAME, ADMIN_EMAIL, hash_password(ADMIN_PASSWORD), "0000000000", 1, datetime.now()))
+            conn.commit()
+
         conn.close()
         return True
     except Exception as e:
@@ -106,19 +159,21 @@ def insert_user(name, email, password, phone):
     try:
         conn = sqlite3.connect(DB_FILE, timeout=10)
         c = conn.cursor()
-        c.execute("INSERT INTO users (name, email, password, phone) VALUES (?, ?, ?, ?)",
-                  (name, email, hash_password(password), phone))
+        c.execute("INSERT INTO users (name, email, password, phone, is_admin, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                  (name, email, hash_password(password), phone, 0, datetime.now()))
         conn.commit(); conn.close(); return True
     except: return False
 
 def check_user(email, password):
+    if email == ADMIN_EMAIL and password == ADMIN_PASSWORD:
+        return (ADMIN_NAME, True)
     try:
         conn = sqlite3.connect(DB_FILE, timeout=10)
         c = conn.cursor()
-        c.execute("SELECT name, password FROM users WHERE email=?", (email,))
+        c.execute("SELECT name, password, is_admin FROM users WHERE email=?", (email,))
         result = c.fetchone(); conn.close()
         if result and verify_password(password, result[1]):
-            return result[0]
+            return (result[0], bool(result[2]))
         return None
     except: return None
 
@@ -126,9 +181,67 @@ def get_users():
     try:
         conn = sqlite3.connect(DB_FILE, timeout=10)
         c = conn.cursor()
-        c.execute("SELECT name, email FROM users")
+        c.execute("SELECT name, email, is_admin, created_at FROM users WHERE email != ? ORDER BY created_at DESC", (ADMIN_EMAIL,))
         users = c.fetchall(); conn.close(); return users
     except: return []
+
+def delete_user(email):
+    """Delete a single user and all associated data"""
+    try:
+        conn = sqlite3.connect(DB_FILE, timeout=10)
+        c = conn.cursor()
+        # Get user's profile pic path for cleanup
+        c.execute("SELECT profile_pic FROM profiles WHERE email=?", (email,))
+        pic_result = c.fetchone()
+        
+        # Delete profile picture file
+        if pic_result and pic_result[0] and os.path.exists(pic_result[0]):
+            try:
+                os.remove(pic_result[0])
+            except:
+                pass
+        
+        # Delete all associated records
+        c.execute("DELETE FROM users WHERE email=?", (email,))
+        c.execute("DELETE FROM profiles WHERE email=?", (email,))
+        c.execute("DELETE FROM timeline_posts WHERE email=?", (email,))
+        c.execute("DELETE FROM messages WHERE user_name=(SELECT name FROM users WHERE email=?)", (email,))
+        
+        conn.commit(); conn.close(); return True
+    except Exception as e:
+        print(f"Delete user error: {e}")
+        return False
+
+def log_admin_action(admin_email, action, target_user=None):
+    """Log admin actions for audit trail"""
+    try:
+        conn = sqlite3.connect(DB_FILE, timeout=10)
+        c = conn.cursor()
+        c.execute("INSERT INTO user_actions_log (admin_email, action, target_user, timestamp) VALUES (?, ?, ?, ?)",
+                  (admin_email, action, target_user, datetime.now()))
+        conn.commit(); conn.close(); return True
+    except: return False
+
+def get_admin_logs():
+    """Get recent admin actions"""
+    try:
+        conn = sqlite3.connect(DB_FILE, timeout=10)
+        c = conn.cursor()
+        c.execute("SELECT admin_email, action, target_user, timestamp FROM user_actions_log ORDER BY timestamp DESC LIMIT 20")
+        logs = c.fetchall(); conn.close(); return logs
+    except: return []
+
+def delete_message_by_index(idx):
+    try:
+        msgs = get_messages()
+        if 0 <= idx < len(msgs):
+            conn = sqlite3.connect(DB_FILE, timeout=10)
+            c = conn.cursor()
+            c.execute("DELETE FROM messages WHERE user_name=? AND message=? AND timestamp=?",
+                      (msgs[idx][0], msgs[idx][1], msgs[idx][2]))
+            conn.commit(); conn.close(); return True
+        return False
+    except: return False
 
 def save_message(user_name, message):
     try:
@@ -170,6 +283,8 @@ def update_profile(email, bio, profile_pic=None):
     except: return False
 
 def get_user_email(name):
+    if name == ADMIN_NAME:
+        return ADMIN_EMAIL
     try:
         conn = sqlite3.connect(DB_FILE, timeout=10)
         c = conn.cursor()
@@ -194,6 +309,24 @@ def get_timeline_posts(email):
         c.execute("SELECT post_text, timestamp FROM timeline_posts WHERE email = ? ORDER BY timestamp DESC", (email,))
         posts = c.fetchall(); conn.close(); return posts
     except: return []
+
+def get_all_messages_count():
+    try:
+        conn = sqlite3.connect(DB_FILE, timeout=10)
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM messages")
+        result = c.fetchone(); conn.close()
+        return result[0] if result else 0
+    except: return 0
+
+def get_total_users_count():
+    try:
+        conn = sqlite3.connect(DB_FILE, timeout=10)
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM users WHERE email != ?", (ADMIN_EMAIL,))
+        result = c.fetchone(); conn.close()
+        return result[0] if result else 0
+    except: return 0
 
 
 # ── UI Helpers ────────────────────────────────────────────────────────────────
@@ -235,7 +368,7 @@ def styled_input(hint, is_password=False):
         password=is_password,
         multiline=False,
         size_hint_y=None, height=dp(50),
-        background_color=(1, 1, 1, 1),          # clean white
+        background_color=(1, 1, 1, 1),
         foreground_color=TEXT_DARK,
         hint_text_color=(*TEXT_MUTED[:3], 0.6),
         cursor_color=PRIMARY,
@@ -244,11 +377,9 @@ def styled_input(hint, is_password=False):
         background_normal='',
         background_active='',
     )
-    # Blue bottom border effect via canvas
     with inp.canvas.after:
         Color(*PRIMARY_LIGHT)
-        inp._border = Rectangle(pos=(inp.x, inp.y),
-                                size=(inp.width, dp(2)))
+        inp._border = Rectangle(pos=(inp.x, inp.y), size=(inp.width, dp(2)))
     inp.bind(
         pos=lambda w, v: setattr(w._border, 'pos', (v[0], v[1])),
         size=lambda w, v: setattr(w._border, 'size', (v[0], dp(2)))
@@ -278,37 +409,24 @@ class HeroHeader(Widget):
     def _draw(self, *args):
         self.canvas.clear()
         with self.canvas:
-            # Base navy background
             Color(*self.bg2)
             Rectangle(pos=self.pos, size=self.size)
-
-            # Large bubble 1 — top left
             Color(*self.bg1, 0.55)
             Ellipse(pos=(self.x - dp(50), self.y + self.height * 0.30),
                     size=(dp(220), dp(220)))
-
-            # Large bubble 2 — top right
             Color(*self.bg1, 0.40)
             Ellipse(pos=(self.x + self.width - dp(120), self.y + self.height * 0.45),
                     size=(dp(180), dp(180)))
-
-            # Medium bubble 3 — bottom center
             Color(1, 1, 1, 0.07)
             Ellipse(pos=(self.x + self.width * 0.25, self.y - dp(30)),
                     size=(dp(140), dp(140)))
-
-            # Small bubble 4 — top center right
             Color(1, 1, 1, 0.05)
             Ellipse(pos=(self.x + self.width * 0.55, self.y + self.height * 0.60),
                     size=(dp(90), dp(90)))
-
-            # Soft white glow behind icon
             Color(1, 1, 1, 0.14)
             cx = self.x + self.width / 2 - dp(44)
             cy = self.y + self.height * 0.40
             Ellipse(pos=(cx, cy), size=(dp(88), dp(88)))
-
-            # Bottom wave rounded edge
             Color(*self.bg2)
             RoundedRectangle(pos=(self.x, self.y),
                              size=(self.width, dp(36)),
@@ -354,21 +472,16 @@ class HomeScreen(Screen):
         root = BoxLayout(orientation='vertical')
 
         hero = HeroHeader(
-            icon='🌐',
-            title='User Hub',
+            icon='🌐', title='User Hub',
             subtitle='Connect · Chat · Share',
-            bg1=PRIMARY, bg2=PRIMARY_DARK,
-            height=230
+            bg1=PRIMARY, bg2=PRIMARY_DARK, height=230
         )
         root.add_widget(hero)
 
-        # Login status strip — light blue
-        self.status_bar = BoxLayout(size_hint_y=None, height=dp(36),
-                                    padding=[dp(20), dp(4)])
+        self.status_bar = BoxLayout(size_hint_y=None, height=dp(36), padding=[dp(20), dp(4)])
         with self.status_bar.canvas.before:
             Color(*PRIMARY, 0.06)
-            self.status_bar._bg = Rectangle(pos=self.status_bar.pos,
-                                            size=self.status_bar.size)
+            self.status_bar._bg = Rectangle(pos=self.status_bar.pos, size=self.status_bar.size)
         self.status_bar.bind(
             pos=lambda w, v: setattr(w._bg, 'pos', v),
             size=lambda w, v: setattr(w._bg, 'size', v)
@@ -384,7 +497,6 @@ class HomeScreen(Screen):
                           spacing=dp(12), size_hint_y=None)
         inner.bind(minimum_height=inner.setter('height'))
 
-        # Section: account
         inner.add_widget(self._section_label('Account'))
         row1 = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
         b_reg = make_rounded_button('  Register', PRIMARY, height=52)
@@ -394,7 +506,6 @@ class HomeScreen(Screen):
         row1.add_widget(b_reg); row1.add_widget(b_log)
         inner.add_widget(row1)
 
-        # Section: explore
         inner.add_widget(self._section_label('Explore'))
         b_view = make_rounded_button('  Community Members', (1,1,1,1), text_color=PRIMARY_DARK, height=52)
         b_view.bind(on_press=lambda *_: setattr(self.manager, 'current', 'view'))
@@ -404,12 +515,17 @@ class HomeScreen(Screen):
         b_chat.bind(on_press=self.go_chat)
         inner.add_widget(b_chat)
 
-        # Section: profile
         inner.add_widget(self._section_label('You'))
-        b_prof = make_rounded_button('  My Profile', (1,1,1,1),
-                                     text_color=PRIMARY_DARK, height=52)
+        b_prof = make_rounded_button('  My Profile', (1,1,1,1), text_color=PRIMARY_DARK, height=52)
         b_prof.bind(on_press=self.go_profile)
         inner.add_widget(b_prof)
+
+        # Admin Panel button (hidden by default)
+        self.admin_btn = make_rounded_button('  🛡️ Admin Panel', (0.50, 0.10, 0.70, 1), height=52)
+        self.admin_btn.bind(on_press=lambda *_: setattr(self.manager, 'current', 'admin'))
+        self.admin_btn.opacity = 0
+        self.admin_btn.disabled = True
+        inner.add_widget(self.admin_btn)
 
         self.logout_btn = make_rounded_button('  Logout', DANGER, height=44)
         self.logout_btn.bind(on_press=self.do_logout)
@@ -430,13 +546,22 @@ class HomeScreen(Screen):
 
     def on_enter(self):
         if current_user:
-            self.status_lbl.text = f'✅  Logged in as  [color=ffc018][b]{current_user}[/b][/color]'
+            badge = '  [color=cc00cc][b]👑 ADMIN[/b][/color]' if is_admin else ''
+            self.status_lbl.text = f'✅  [color=ffc018][b]{current_user}[/b][/color]{badge}'
             self.logout_btn.opacity = 1
             self.logout_btn.disabled = False
+            if is_admin:
+                self.admin_btn.opacity = 1
+                self.admin_btn.disabled = False
+            else:
+                self.admin_btn.opacity = 0
+                self.admin_btn.disabled = True
         else:
             self.status_lbl.text = 'Not logged in'
             self.logout_btn.opacity = 0
             self.logout_btn.disabled = True
+            self.admin_btn.opacity = 0
+            self.admin_btn.disabled = True
 
     def go_chat(self, *_):
         if current_user:
@@ -451,39 +576,24 @@ class HomeScreen(Screen):
             self.status_lbl.text = '⚠️  Please login first'
 
     def do_logout(self, *_):
-        global current_user
+        global current_user, current_user_email, is_admin
         current_user = None
+        current_user_email = None
+        is_admin = False
         self.on_enter()
 
 
 class RegisterScreen(Screen):
     def build(self):
         root = BoxLayout(orientation='vertical')
-
-        hero = HeroHeader(
-            icon='✏️',
-            title='Create Account',
-            subtitle='Join the community today',
-            bg1=ACCENT, bg2=PRIMARY_DARK,
-            height=200
-        )
+        hero = HeroHeader(icon='✏️', title='Create Account',
+                          subtitle='Join the community today',
+                          bg1=ACCENT, bg2=PRIMARY_DARK, height=200)
         root.add_widget(hero)
 
         scroll = ScrollView(size_hint_y=1)
-        form = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(12),
-                         size_hint_y=None)
+        form = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(12), size_hint_y=None)
         form.bind(minimum_height=form.setter('height'))
-
-        icon_row = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(6))
-        for icon, label in [('#', 'Name'), ('@', 'Email'), ('*', 'Pass'), ('+', 'Phone')]:
-            col = BoxLayout(orientation='vertical')
-            col.add_widget(Label(text=icon, font_size='20sp', size_hint_y=None, height=dp(26)))
-            col.add_widget(Label(text=label, font_size='9sp', color=TEXT_MUTED,
-                                 size_hint_y=None, height=dp(14)))
-            icon_row.add_widget(col)
-        form.add_widget(icon_row)
-
-        form.add_widget(self._divider())
 
         self.name_input  = styled_input('👤  Full Name')
         self.email_input = styled_input('📧  Email Address')
@@ -500,8 +610,7 @@ class RegisterScreen(Screen):
 
         btn_row = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
         b_reg  = make_rounded_button('  Register', PRIMARY, height=52)
-        b_back = make_rounded_button('  Back', (1,1,1,1),
-                                     text_color=PRIMARY_DARK, height=52)
+        b_back = make_rounded_button('  Back', (1,1,1,1), text_color=PRIMARY_DARK, height=52)
         b_reg.bind(on_press=self.register)
         b_back.bind(on_press=lambda *_: setattr(self.manager, 'current', 'home'))
         btn_row.add_widget(b_reg); btn_row.add_widget(b_back)
@@ -511,15 +620,6 @@ class RegisterScreen(Screen):
         root.add_widget(scroll)
         self.add_widget(root)
 
-    def _divider(self):
-        w = Widget(size_hint_y=None, height=dp(1))
-        with w.canvas:
-            Color(*PRIMARY_LIGHT)
-            Rectangle(pos=w.pos, size=w.size)
-        w.bind(pos=lambda wi, v: setattr(wi.canvas.children[-1], 'pos', v),
-               size=lambda wi, v: setattr(wi.canvas.children[-1], 'size', v))
-        return w
-
     def register(self, *_):
         name     = self.name_input.text.strip()
         email    = self.email_input.text.strip()
@@ -527,23 +627,20 @@ class RegisterScreen(Screen):
         phone    = self.phone_input.text.strip()
 
         if not name or not email or not password:
-            self.msg.text = '⚠️  Please fill in all required fields'
-            return
+            self.msg.text = '⚠️  Please fill in all required fields'; return
         if '@' not in email:
-            self.msg.text = '⚠️  Please enter a valid email address'
-            return
+            self.msg.text = '⚠️  Please enter a valid email address'; return
         if len(password) < 6:
-            self.msg.text = '⚠️  Password must be at least 6 characters'
-            return
+            self.msg.text = '⚠️  Password must be at least 6 characters'; return
+        if email == ADMIN_EMAIL:
+            self.msg.text = '⚠️  This email is reserved'; return
 
         if insert_user(name, email, password, phone):
             self.msg.color = SUCCESS
             self.msg.text = '🎉  Welcome! Registration successful'
-            for inp in [self.name_input, self.email_input,
-                        self.pass_input, self.phone_input]:
+            for inp in [self.name_input, self.email_input, self.pass_input, self.phone_input]:
                 inp.text = ''
-            Clock.schedule_once(
-                lambda dt: setattr(self.manager, 'current', 'login'), 1.5)
+            Clock.schedule_once(lambda dt: setattr(self.manager, 'current', 'login'), 1.5)
         else:
             self.msg.color = DANGER
             self.msg.text = '⚠️  This email is already registered'
@@ -552,28 +649,14 @@ class RegisterScreen(Screen):
 class LoginScreen(Screen):
     def build(self):
         root = BoxLayout(orientation='vertical')
-
-        hero = HeroHeader(
-            icon='🔑',
-            title='Welcome Back',
-            subtitle='Sign in to your account',
-            bg1=PRIMARY, bg2=PRIMARY_DARK,
-            height=210
-        )
+        hero = HeroHeader(icon='🔑', title='Welcome Back',
+                          subtitle='Sign in to your account',
+                          bg1=PRIMARY, bg2=PRIMARY_DARK, height=210)
         root.add_widget(hero)
 
         scroll = ScrollView(size_hint_y=1)
-        form = BoxLayout(orientation='vertical', padding=dp(24), spacing=dp(14),
-                         size_hint_y=None)
+        form = BoxLayout(orientation='vertical', padding=dp(24), spacing=dp(14), size_hint_y=None)
         form.bind(minimum_height=form.setter('height'))
-
-        art_row = BoxLayout(size_hint_y=None, height=dp(50))
-        art_lbl = Label(text='Secure  |  Private  |  Trusted',
-                        font_size='14sp', color=(*PRIMARY[:3], 0.8),
-                        halign='center')
-        art_lbl.bind(size=art_lbl.setter('text_size'))
-        art_row.add_widget(art_lbl)
-        form.add_widget(art_row)
 
         self.email_input = styled_input('📧  Email Address')
         self.pass_input  = styled_input('🔒  Password', is_password=True)
@@ -587,36 +670,32 @@ class LoginScreen(Screen):
 
         btn_row = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
         b_login = make_rounded_button('  Login', PRIMARY, height=52)
-        b_back  = make_rounded_button('  Back', PRIMARY_LIGHT,
-                                      text_color=PRIMARY_DARK, height=52)
+        b_back  = make_rounded_button('  Back', PRIMARY_LIGHT, text_color=PRIMARY_DARK, height=52)
         b_login.bind(on_press=self.login)
         b_back.bind(on_press=lambda *_: setattr(self.manager, 'current', 'home'))
         btn_row.add_widget(b_login); btn_row.add_widget(b_back)
         form.add_widget(btn_row)
-
-        no_account = Label(
-            text="Don't have an account?  Register →",
-            font_size='12sp', color=(*PRIMARY[:3], 0.8),
-            size_hint_y=None, height=dp(36), halign='center'
-        )
-        no_account.bind(size=no_account.setter('text_size'))
-        form.add_widget(no_account)
 
         scroll.add_widget(form)
         root.add_widget(scroll)
         self.add_widget(root)
 
     def login(self, *_):
-        global current_user
+        global current_user, current_user_email, is_admin
         email    = self.email_input.text.strip()
         password = self.pass_input.text.strip()
-        name = check_user(email, password)
-        if name:
+        result = check_user(email, password)
+        if result:
+            name, admin = result
             current_user = name
+            current_user_email = email
+            is_admin = admin
+            # Assign color to user on login
+            assign_user_color(name)
             self.msg.color = SUCCESS
-            self.msg.text = f'✅  Welcome back, {name}!'
-            Clock.schedule_once(
-                lambda dt: setattr(self.manager, 'current', 'home'), 1)
+            badge = ' 👑 ADMIN' if admin else ''
+            self.msg.text = f'✅  Welcome back, {name}!{badge}'
+            Clock.schedule_once(lambda dt: setattr(self.manager, 'current', 'home'), 1)
         else:
             self.msg.color = DANGER
             self.msg.text = '⚠️  Invalid email or password'
@@ -625,26 +704,19 @@ class LoginScreen(Screen):
 class ViewUsersScreen(Screen):
     def build(self):
         root = BoxLayout(orientation='vertical')
-
-        hero = HeroHeader(
-            icon='👥',
-            title='Community',
-            subtitle='All registered members',
-            bg1=ACCENT, bg2=PRIMARY_DARK,
-            height=190
-        )
+        hero = HeroHeader(icon='👥', title='Community',
+                          subtitle='All registered members',
+                          bg1=ACCENT, bg2=PRIMARY_DARK, height=190)
         root.add_widget(hero)
 
         inner = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(8))
-
         self.stats_lbl = Label(text='', font_size='12sp', color=TEXT_MUTED,
                                size_hint_y=None, height=dp(28), halign='left')
         self.stats_lbl.bind(size=self.stats_lbl.setter('text_size'))
         inner.add_widget(self.stats_lbl)
 
         self.scroll = ScrollView(size_hint_y=1)
-        self.user_layout = BoxLayout(orientation='vertical', size_hint_y=None,
-                                     spacing=dp(8))
+        self.user_layout = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(8))
         self.user_layout.bind(minimum_height=self.user_layout.setter('height'))
         self.scroll.add_widget(self.user_layout)
         inner.add_widget(self.scroll)
@@ -660,24 +732,20 @@ class ViewUsersScreen(Screen):
         self.user_layout.clear_widgets()
         users = get_users()
         self.stats_lbl.text = f'👥  {len(users)} member{"s" if len(users) != 1 else ""} found'
-
         avatars = ['🧑', '👩', '🧔', '👱', '🧕', '👲', '🧑‍💻', '👩‍💼', '🧑‍🎨', '👩‍🔬']
 
         if users:
-            for i, (name, email) in enumerate(users):
+            for i, (name, email, admin_flag, created_at) in enumerate(users):
                 card = make_card(padding=12, spacing=6)
                 card.size_hint_y = None
                 card.height = dp(68)
-
                 row = BoxLayout(spacing=dp(12))
-
                 av = Label(text=avatars[i % len(avatars)], font_size='22sp',
                            size_hint=(None, None), size=(dp(44), dp(44)))
                 with av.canvas.before:
                     Color(*PRIMARY, 0.15)
                     Ellipse(pos=av.pos, size=av.size)
                 av.bind(pos=lambda w, v: setattr(w.canvas.before.children[-1], 'pos', v))
-
                 info = BoxLayout(orientation='vertical')
                 n_lbl = Label(text=name, font_size='14sp', bold=True,
                               color=TEXT_DARK, halign='left', valign='middle')
@@ -686,7 +754,6 @@ class ViewUsersScreen(Screen):
                               halign='left', valign='middle')
                 e_lbl.bind(size=e_lbl.setter('text_size'))
                 info.add_widget(n_lbl); info.add_widget(e_lbl)
-
                 row.add_widget(av); row.add_widget(info)
                 card.add_widget(row)
                 self.user_layout.add_widget(card)
@@ -699,27 +766,21 @@ class ViewUsersScreen(Screen):
 class ChatScreen(Screen):
     def build(self):
         root = BoxLayout(orientation='vertical')
-
-        hero = HeroHeader(
-            icon='💬',
-            title='Chat Room',
-            subtitle='Live community messages',
-            bg1=ACCENT, bg2=PRIMARY_DARK,
-            height=160
-        )
+        hero = HeroHeader(icon='💬', title='Chat Room',
+                          subtitle='Live community messages',
+                          bg1=ACCENT, bg2=PRIMARY_DARK, height=160)
         root.add_widget(hero)
 
-        inner = BoxLayout(orientation='vertical', padding=[dp(12), dp(6), dp(12), dp(6)], spacing=dp(6))
+        inner = BoxLayout(orientation='vertical',
+                          padding=[dp(12), dp(6), dp(12), dp(6)], spacing=dp(6))
 
         top_row = BoxLayout(size_hint_y=None, height=dp(24), padding=[dp(4), 0])
-        top_row.add_widget(Label(text='*  Live',
-                                 font_size='11sp', color=ACCENT,
+        top_row.add_widget(Label(text='*  Live', font_size='11sp', color=ACCENT,
                                  halign='left', valign='middle'))
         inner.add_widget(top_row)
 
         self.scroll = ScrollView(size_hint_y=1)
-        self.chat_layout = BoxLayout(orientation='vertical',
-                                     size_hint_y=None, spacing=dp(8))
+        self.chat_layout = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(8))
         self.chat_layout.bind(minimum_height=self.chat_layout.setter('height'))
         self.scroll.add_widget(self.chat_layout)
         inner.add_widget(self.scroll)
@@ -728,43 +789,40 @@ class ChatScreen(Screen):
         input_card.size_hint_y = None
         input_card.height = dp(56)
         input_row = BoxLayout(spacing=dp(8))
+
         self.msg_input = TextInput(
             hint_text='Type a message...',
             multiline=False,
-            background_color=(0.96, 0.97, 1.00, 1),
+            background_color=(1, 1, 1, 1),
             background_normal='',
             background_active='',
-            foreground_color=(0.05, 0.15, 0.30, 1),
+            foreground_color=(0.05, 0.10, 0.25, 1),
             hint_text_color=(0.55, 0.60, 0.70, 1),
             cursor_color=PRIMARY,
             padding=[dp(14), dp(13)],
             font_size='14sp'
         )
-        with self.msg_input.canvas.before:
-            Color(*PRIMARY, 0.5)
-            self.msg_input._border_rect = RoundedRectangle(
-                pos=(self.msg_input.x - dp(1), self.msg_input.y - dp(1)),
-                size=(self.msg_input.width + dp(2), self.msg_input.height + dp(2)),
-                radius=[dp(8)]
-            )
-        self.msg_input.bind(
-            pos=lambda w, v: setattr(w._border_rect, 'pos', (v[0]-dp(1), v[1]-dp(1))),
-            size=lambda w, v: setattr(w._border_rect, 'size', (v[0]+dp(2), v[1]+dp(2)))
-        )
+
         send_btn = make_rounded_button('Send', PRIMARY, height=44, radius=22)
         send_btn.size_hint_x = 0.28
         send_btn.bind(on_press=self.send_message)
-        clear_btn = make_rounded_button('Clear', DANGER, height=44, radius=22)
-        clear_btn.size_hint_x = 0.25
-        clear_btn.bind(on_press=self.clear_chat)
+
+        if is_admin:
+            extra_btn = make_rounded_button('🗑 All', DANGER, height=44, radius=22)
+            extra_btn.size_hint_x = 0.25
+            extra_btn.bind(on_press=self.clear_chat)
+        else:
+            extra_btn = make_rounded_button('Clear', DANGER, height=44, radius=22)
+            extra_btn.size_hint_x = 0.25
+            extra_btn.bind(on_press=lambda *_: None)
+
         input_row.add_widget(self.msg_input)
         input_row.add_widget(send_btn)
-        input_row.add_widget(clear_btn)
+        input_row.add_widget(extra_btn)
         input_card.add_widget(input_row)
         inner.add_widget(input_card)
 
-        b_back = make_rounded_button('  Back', (1,1,1,1),
-                                     text_color=PRIMARY_DARK, height=44)
+        b_back = make_rounded_button('  Back', (1,1,1,1), text_color=PRIMARY_DARK, height=44)
         b_back.bind(on_press=self.go_back)
         inner.add_widget(b_back)
 
@@ -782,70 +840,77 @@ class ChatScreen(Screen):
     def load_messages(self, *_):
         self.chat_layout.clear_widgets()
         messages = get_messages()
-        for user_name, message, timestamp in messages:
+        for msg_idx, (user_name, message, timestamp) in enumerate(messages):
             is_me = (user_name == current_user)
             time_str = str(timestamp)[11:16]
 
-            outer = BoxLayout(size_hint_y=None, height=dp(72),
-                              padding=[dp(6), dp(4)])
+            # Get unique color for this user
+            user_color = get_user_color(user_name)
 
+            outer = BoxLayout(size_hint_y=None, height=dp(72), padding=[dp(6), dp(4)])
             bubble = BoxLayout(orientation='vertical',
-                               size_hint_y=None, padding=[dp(12), dp(8)],
-                               spacing=dp(2))
+                               size_hint_y=None, padding=[dp(12), dp(8)], spacing=dp(2))
             bubble.height = dp(62)
 
             if is_me:
-                # Blue bubble for self
                 with bubble.canvas.before:
                     Color(*PRIMARY)
-                    bubble._bg = RoundedRectangle(pos=bubble.pos,
-                                                  size=bubble.size,
+                    bubble._bg = RoundedRectangle(pos=bubble.pos, size=bubble.size,
                                                   radius=[dp(16), dp(16), dp(4), dp(16)])
                 name_color = (0.8, 0.9, 1.0, 1)
                 msg_color  = WHITE
                 dot = '🔵'
             else:
-                # Teal bubble for others
                 with bubble.canvas.before:
-                    Color(*ACCENT, 0.15)
-                    bubble._bg = RoundedRectangle(pos=bubble.pos,
-                                                  size=bubble.size,
+                    Color(*user_color, 0.20)
+                    bubble._bg = RoundedRectangle(pos=bubble.pos, size=bubble.size,
                                                   radius=[dp(16), dp(16), dp(16), dp(4)])
-                    Color(*ACCENT, 0.5)
-                    bubble._border = RoundedRectangle(pos=(bubble.x-dp(1), bubble.y-dp(1)),
-                                                      size=(bubble.width+dp(2), bubble.height+dp(2)),
-                                                      radius=[dp(17)])
-                name_color = ACCENT2
+                name_color = user_color
                 msg_color  = TEXT_DARK
-                dot = '🌊'
+                dot = '●'
 
             bubble.bind(
                 pos=lambda w, v: setattr(w._bg, 'pos', v),
                 size=lambda w, v: setattr(w._bg, 'size', v)
             )
 
+            admin_badge = ' 👑' if user_name == ADMIN_NAME else ''
             name_lbl = Label(
-                text=f"{dot} {user_name}",
+                text=f"{dot} {user_name}{admin_badge}",
                 font_size='11sp', bold=True, color=name_color,
-                size_hint_y=None, height=dp(20),
-                halign='left', valign='middle'
+                size_hint_y=None, height=dp(20), halign='left', valign='middle'
             )
             name_lbl.bind(size=name_lbl.setter('text_size'))
 
+            msg_row = BoxLayout(size_hint_y=None, height=dp(26))
             msg_lbl = Label(
                 text=f"{message}  [{time_str}]",
                 font_size='13sp', color=msg_color,
-                size_hint_y=None, height=dp(26),
                 halign='left', valign='middle'
             )
             msg_lbl.bind(size=msg_lbl.setter('text_size'))
+            msg_row.add_widget(msg_lbl)
+
+            # Admin delete button per message
+            if is_admin:
+                idx_copy = msg_idx
+                del_btn = Button(text='✕', font_size='11sp',
+                                 size_hint=(None, None), size=(dp(24), dp(24)),
+                                 background_color=(0.8, 0.1, 0.1, 0.7),
+                                 background_normal='', color=WHITE)
+                del_btn.bind(on_press=lambda btn, i=idx_copy: self.delete_msg(i))
+                msg_row.add_widget(del_btn)
 
             bubble.add_widget(name_lbl)
-            bubble.add_widget(msg_lbl)
+            bubble.add_widget(msg_row)
             outer.add_widget(bubble)
             self.chat_layout.add_widget(outer)
 
         self.scroll.scroll_y = 0
+
+    def delete_msg(self, idx):
+        delete_message_by_index(idx)
+        self.load_messages()
 
     def send_message(self, *_):
         msg = self.msg_input.text.strip()
@@ -858,8 +923,8 @@ class ChatScreen(Screen):
             conn = sqlite3.connect(DB_FILE, timeout=10)
             c = conn.cursor()
             c.execute("DELETE FROM messages")
-            conn.commit()
-            conn.close()
+            conn.commit(); conn.close()
+            log_admin_action(current_user_email, "CLEAR_ALL_MESSAGES")
             self.load_messages()
         except Exception as e:
             print(f"Clear error: {e}")
@@ -868,17 +933,219 @@ class ChatScreen(Screen):
         self.manager.current = 'home'
 
 
+class AdminScreen(Screen):
+    def build(self):
+        root = BoxLayout(orientation='vertical')
+        hero = HeroHeader(icon='🛡️', title='Admin Panel',
+                          subtitle='Full control dashboard',
+                          bg1=(0.50, 0.10, 0.70, 1), bg2=(0.25, 0.05, 0.40, 1),
+                          height=190)
+        root.add_widget(hero)
+
+        scroll = ScrollView(size_hint_y=1)
+        inner = BoxLayout(orientation='vertical', padding=dp(16),
+                          spacing=dp(12), size_hint_y=None)
+        inner.bind(minimum_height=inner.setter('height'))
+
+        # Stats row
+        stats_card = make_card(padding=14, spacing=8)
+        stats_card.size_hint_y = None
+        stats_card.height = dp(80)
+        stats_row = BoxLayout(spacing=dp(10))
+
+        self.users_stat = Label(text='👥\n—', font_size='13sp', bold=True,
+                                color=PRIMARY, halign='center', valign='middle')
+        self.users_stat.bind(size=self.users_stat.setter('text_size'))
+        self.msgs_stat = Label(text='💬\n—', font_size='13sp', bold=True,
+                               color=ACCENT, halign='center', valign='middle')
+        self.msgs_stat.bind(size=self.msgs_stat.setter('text_size'))
+
+        stats_row.add_widget(self.users_stat)
+        stats_row.add_widget(self.msgs_stat)
+        stats_card.add_widget(stats_row)
+        inner.add_widget(stats_card)
+
+        # Section: Users
+        lbl_u = Label(text='USER MANAGEMENT (Individual Control)', font_size='10sp', color=ACCENT,
+                      size_hint_y=None, height=dp(28), halign='left', bold=True)
+        lbl_u.bind(size=lbl_u.setter('text_size'))
+        inner.add_widget(lbl_u)
+
+        self.users_scroll = ScrollView(size_hint_y=None, height=dp(250))
+        self.users_layout = BoxLayout(orientation='vertical',
+                                      size_hint_y=None, spacing=dp(6))
+        self.users_layout.bind(minimum_height=self.users_layout.setter('height'))
+        self.users_scroll.add_widget(self.users_layout)
+        inner.add_widget(self.users_scroll)
+
+        # Section: Messages
+        lbl_m = Label(text='MESSAGE MANAGEMENT', font_size='10sp', color=ACCENT,
+                      size_hint_y=None, height=dp(28), halign='left', bold=True)
+        lbl_m.bind(size=lbl_m.setter('text_size'))
+        inner.add_widget(lbl_m)
+
+        b_clear_all = make_rounded_button('🗑️  Delete ALL Messages', DANGER, height=46)
+        b_clear_all.bind(on_press=self.clear_all_messages)
+        inner.add_widget(b_clear_all)
+
+        # Section: Admin Log
+        lbl_log = Label(text='RECENT ADMIN ACTIONS', font_size='10sp', color=ACCENT,
+                        size_hint_y=None, height=dp(28), halign='left', bold=True)
+        lbl_log.bind(size=lbl_log.setter('text_size'))
+        inner.add_widget(lbl_log)
+
+        self.logs_scroll = ScrollView(size_hint_y=None, height=dp(150))
+        self.logs_layout = BoxLayout(orientation='vertical',
+                                     size_hint_y=None, spacing=dp(4))
+        self.logs_layout.bind(minimum_height=self.logs_layout.setter('height'))
+        self.logs_scroll.add_widget(self.logs_layout)
+        inner.add_widget(self.logs_scroll)
+
+        b_back = make_rounded_button('  Back to Home', (1,1,1,1), text_color=PRIMARY_DARK, height=48)
+        b_back.bind(on_press=lambda *_: setattr(self.manager, 'current', 'home'))
+        inner.add_widget(b_back)
+
+        scroll.add_widget(inner)
+        root.add_widget(scroll)
+        self.add_widget(root)
+
+    def on_enter(self):
+        self.users_stat.text = f'👥\n{get_total_users_count()} Users'
+        self.msgs_stat.text  = f'💬\n{get_all_messages_count()} Messages'
+        self.load_users()
+        self.load_admin_logs()
+
+    def load_users(self):
+        """Load and display all users with individual delete buttons"""
+        self.users_layout.clear_widgets()
+        users = get_users()
+        
+        if not users:
+            self.users_layout.add_widget(
+                Label(text='No users registered yet.', color=TEXT_MUTED,
+                      size_hint_y=None, height=dp(40)))
+            return
+
+        for name, email, admin_flag, created_at in users:
+            # Main user row
+            card = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(6))
+            with card.canvas.before:
+                Color(*ACCENT, 0.06)
+                card._bg = RoundedRectangle(pos=card.pos, size=card.size, radius=[dp(8)])
+            card.bind(pos=lambda w, v: setattr(w._bg, 'pos', v),
+                      size=lambda w, v: setattr(w._bg, 'size', v))
+
+            # User info
+            info_row = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(12), padding=[dp(8), dp(4)])
+            
+            info_col = BoxLayout(orientation='vertical', spacing=dp(2))
+            name_lbl = Label(text=f'👤 {name}', font_size='13sp', bold=True, color=TEXT_DARK,
+                            halign='left', valign='middle', size_hint_y=None, height=dp(24))
+            name_lbl.bind(size=name_lbl.setter('text_size'))
+            
+            email_lbl = Label(text=email, font_size='10sp', color=TEXT_MUTED,
+                             halign='left', valign='middle', size_hint_y=None, height=dp(18))
+            email_lbl.bind(size=email_lbl.setter('text_size'))
+            
+            info_col.add_widget(name_lbl)
+            info_col.add_widget(email_lbl)
+            info_row.add_widget(info_col)
+            
+            # Delete button (individual per user)
+            del_btn = make_rounded_button('🗑 Delete', DANGER, height=40, radius=8)
+            del_btn.size_hint_x = 0.28
+            email_copy = email
+            del_btn.bind(on_press=lambda btn, em=email_copy: self.confirm_delete_user(em))
+            info_row.add_widget(del_btn)
+            
+            card.add_widget(info_row)
+            
+            # Metadata row
+            if created_at:
+                meta_lbl = Label(text=f'  Joined: {str(created_at)[:10]}', font_size='9sp',
+                                color=TEXT_MUTED, halign='left', valign='middle',
+                                size_hint_y=None, height=dp(18))
+                meta_lbl.bind(size=meta_lbl.setter('text_size'))
+                card.add_widget(meta_lbl)
+            
+            self.users_layout.add_widget(card)
+
+    def load_admin_logs(self):
+        """Load and display recent admin actions"""
+        self.logs_layout.clear_widgets()
+        logs = get_admin_logs()
+        
+        if not logs:
+            self.logs_layout.add_widget(
+                Label(text='No admin actions yet.', color=TEXT_MUTED,
+                      size_hint_y=None, height=dp(40)))
+            return
+
+        for admin_email, action, target_user, timestamp in logs:
+            log_lbl = Label(
+                text=f'{action} → {target_user or "N/A"} [{str(timestamp)[11:16]}]',
+                font_size='9sp', color=ACCENT, halign='left', valign='middle',
+                size_hint_y=None, height=dp(32)
+            )
+            log_lbl.bind(size=log_lbl.setter('text_size'))
+            self.logs_layout.add_widget(log_lbl)
+
+    def confirm_delete_user(self, email):
+        """Confirmation dialog for individual user deletion"""
+        content = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12))
+        content.add_widget(Label(text=f'Delete user?\n{email}',
+                                 color=TEXT_DARK, halign='center', font_size='14sp'))
+        btn_row = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(48))
+        yes_btn = make_rounded_button('Yes, Delete', DANGER, height=44)
+        no_btn  = make_rounded_button('Cancel', (1,1,1,1), text_color=PRIMARY_DARK, height=44)
+        btn_row.add_widget(yes_btn); btn_row.add_widget(no_btn)
+        content.add_widget(btn_row)
+        popup = Popup(title='Confirm Delete', content=content, size_hint=(0.85, 0.35))
+        
+        def do_delete(*_):
+            if delete_user(email):
+                log_admin_action(current_user_email, "DELETE_USER", email)
+                popup.dismiss()
+                self.on_enter()
+        
+        yes_btn.bind(on_press=do_delete)
+        no_btn.bind(on_press=popup.dismiss)
+        popup.open()
+
+    def clear_all_messages(self, *_):
+        """Confirmation dialog for clearing all messages"""
+        content = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12))
+        content.add_widget(Label(text='Delete ALL messages?\nThis cannot be undone!',
+                                 color=DANGER, halign='center', font_size='14sp'))
+        btn_row = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(48))
+        yes_btn = make_rounded_button('Yes, Delete All', DANGER, height=44)
+        no_btn  = make_rounded_button('Cancel', (1,1,1,1), text_color=PRIMARY_DARK, height=44)
+        btn_row.add_widget(yes_btn); btn_row.add_widget(no_btn)
+        content.add_widget(btn_row)
+        popup = Popup(title='Confirm', content=content, size_hint=(0.85, 0.35))
+        
+        def do_clear(*_):
+            try:
+                conn = sqlite3.connect(DB_FILE, timeout=10)
+                c = conn.cursor()
+                c.execute("DELETE FROM messages")
+                conn.commit(); conn.close()
+                log_admin_action(current_user_email, "CLEAR_ALL_MESSAGES", "ALL")
+            except: pass
+            popup.dismiss()
+            self.on_enter()
+        
+        yes_btn.bind(on_press=do_clear)
+        no_btn.bind(on_press=popup.dismiss)
+        popup.open()
+
+
 class ProfileScreen(Screen):
     def build(self):
         root = BoxLayout(orientation='vertical')
-
-        self.hero = HeroHeader(
-            icon='🪪',
-            title='My Profile',
-            subtitle='Your personal space',
-            bg1=PRIMARY, bg2=PRIMARY_DARK,
-            height=200
-        )
+        self.hero = HeroHeader(icon='🪪', title='My Profile',
+                               subtitle='Your personal space',
+                               bg1=PRIMARY, bg2=PRIMARY_DARK, height=200)
         root.add_widget(self.hero)
 
         scroll = ScrollView(size_hint_y=1)
@@ -888,100 +1155,94 @@ class ProfileScreen(Screen):
 
         info_card = make_card()
         info_card.size_hint_y = None
-        info_card.height = dp(110)
+        info_card.height = dp(140)
 
-        top_row = BoxLayout(spacing=dp(14), size_hint_y=None, height=dp(70))
-
-        self.profile_image = Image(source='', size_hint=(None, None),
-                                   size=(dp(64), dp(64)))
-        self.avatar_placeholder = Label(text='👤', font_size='34sp',
-                                        size_hint=(None, None),
-                                        size=(dp(64), dp(64)))
+        top_row = BoxLayout(spacing=dp(14), size_hint_y=None, height=dp(80))
+        
+        # Profile image display
+        self.profile_image = Image(source='', size_hint=(None, None), size=(dp(70), dp(70)))
+        
+        self.avatar_placeholder = Label(text='👤', font_size='36sp',
+                                        size_hint=(None, None), size=(dp(70), dp(70)))
         with self.avatar_placeholder.canvas.before:
             Color(*PRIMARY, 0.15)
-            self.av_bg = Ellipse(pos=self.avatar_placeholder.pos,
-                                 size=self.avatar_placeholder.size)
+            self.av_bg = Ellipse(pos=self.avatar_placeholder.pos, size=self.avatar_placeholder.size)
         self.avatar_placeholder.bind(
             pos=lambda w, v: setattr(self.av_bg, 'pos', v),
             size=lambda w, v: setattr(self.av_bg, 'size', v)
         )
         top_row.add_widget(self.avatar_placeholder)
 
-        details = BoxLayout(orientation='vertical', spacing=dp(2))
+        details = BoxLayout(orientation='vertical', spacing=dp(4))
         self.name_label  = Label(text='—', font_size='16sp', bold=True,
-                                 color=TEXT_DARK, halign='left', valign='middle')
+                                 color=TEXT_DARK, halign='left', valign='top')
         self.email_label = Label(text='—', font_size='11sp', color=TEXT_MUTED,
-                                 halign='left', valign='middle')
+                                 halign='left', valign='top')
+        self.phone_label = Label(text='—', font_size='11sp', color=TEXT_MUTED,
+                                halign='left', valign='top')
+        
         self.name_label.bind(size=self.name_label.setter('text_size'))
         self.email_label.bind(size=self.email_label.setter('text_size'))
+        self.phone_label.bind(size=self.phone_label.setter('text_size'))
+        
         details.add_widget(self.name_label)
         details.add_widget(self.email_label)
+        details.add_widget(self.phone_label)
         top_row.add_widget(details)
 
-        upload_btn = make_rounded_button('📷', ACCENT, height=36, radius=8)
+        upload_btn = make_rounded_button('📷', ACCENT, height=40, radius=10)
         upload_btn.size_hint = (None, None)
-        upload_btn.size = (dp(44), dp(36))
+        upload_btn.size = (dp(50), dp(40))
         upload_btn.bind(on_press=self.choose_profile_pic)
         top_row.add_widget(upload_btn)
-
+        
         info_card.add_widget(top_row)
 
-        meta_row = BoxLayout(spacing=dp(16), size_hint_y=None, height=dp(26))
-        self.phone_label = icon_label('📞', 'Not set')
-        self.join_label  = icon_label('📅', 'Member since —')
-        meta_row.add_widget(self.phone_label)
+        meta_row = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(30))
+        self.join_label  = Label(text='📅 Member since —', font_size='10sp', color=TEXT_MUTED,
+                                halign='left', valign='middle')
+        self.join_label.bind(size=self.join_label.setter('text_size'))
         meta_row.add_widget(self.join_label)
         info_card.add_widget(meta_row)
-
+        
         form.add_widget(info_card)
 
-        # Bio card
         bio_card = make_card()
         bio_card.size_hint_y = None
-        bio_card.height = dp(140)
-
-        bio_lbl = Label(text='Bio', font_size='13sp', bold=True,
-                        color=PRIMARY, size_hint_y=None, height=dp(28),
-                        halign='left', valign='middle')
+        bio_card.height = dp(160)
+        bio_lbl = Label(text='Bio', font_size='13sp', bold=True, color=PRIMARY,
+                        size_hint_y=None, height=dp(28), halign='left', valign='middle')
         bio_lbl.bind(size=bio_lbl.setter('text_size'))
         bio_card.add_widget(bio_lbl)
-
         self.bio_input = TextInput(
             hint_text='Tell the community about yourself...',
             background_color=(0.92, 0.95, 1.00, 1),
             foreground_color=TEXT_DARK,
-            size_hint_y=None, height=dp(68),
-            padding=[dp(10), dp(8)],
-            font_size='13sp'
+            size_hint_y=None, height=dp(80),
+            padding=[dp(10), dp(8)], font_size='13sp'
         )
         bio_card.add_widget(self.bio_input)
-
         save_bio_btn = make_rounded_button('  Save Bio', ACCENT, height=38, radius=8)
         save_bio_btn.bind(on_press=self.save_bio)
         bio_card.add_widget(save_bio_btn)
-
         form.add_widget(bio_card)
 
-        # Timeline card
         tl_card = make_card()
         tl_card.size_hint_y = None
-        tl_card.height = dp(300)
-
-        tl_header = Label(text='My Timeline', font_size='14sp', bold=True,
-                          color=PRIMARY, size_hint_y=None, height=dp(30),
-                          halign='left', valign='middle')
+        tl_card.height = dp(320)
+        tl_header = Label(text='My Timeline', font_size='14sp', bold=True, color=PRIMARY,
+                          size_hint_y=None, height=dp(30), halign='left', valign='middle')
         tl_header.bind(size=tl_header.setter('text_size'))
         tl_card.add_widget(tl_header)
 
-        post_row = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        post_row = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
         self.timeline_input = TextInput(
             hint_text='Share something...',
             multiline=False,
             background_color=(0.92, 0.95, 1.00, 1),
             foreground_color=TEXT_DARK,
             hint_text_color=(*TEXT_MUTED[:3], 0.6),
-            padding=[dp(10), dp(10)],
-            font_size='13sp'
+            padding=[dp(10), dp(10)], font_size='13sp'
         )
         post_btn = make_rounded_button('Post', ACCENT, height=44, radius=8)
         post_btn.size_hint_x = 0.28
@@ -991,12 +1252,10 @@ class ProfileScreen(Screen):
         tl_card.add_widget(post_row)
 
         self.tl_scroll = ScrollView(size_hint_y=1)
-        self.tl_layout = BoxLayout(orientation='vertical',
-                                   size_hint_y=None, spacing=dp(6))
+        self.tl_layout = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(6))
         self.tl_layout.bind(minimum_height=self.tl_layout.setter('height'))
         self.tl_scroll.add_widget(self.tl_layout)
         tl_card.add_widget(self.tl_scroll)
-
         form.add_widget(tl_card)
 
         b_back = make_rounded_button('  Back to Home', (1,1,1,1), text_color=PRIMARY_DARK, height=50)
@@ -1009,8 +1268,7 @@ class ProfileScreen(Screen):
 
     def on_enter(self):
         email = get_user_email(current_user)
-        if not email:
-            return
+        if not email: return
         profile = get_profile(email)
         if profile:
             name, phone, bio, join_date, profile_pic = profile
@@ -1018,12 +1276,14 @@ class ProfileScreen(Screen):
             self.hero._draw()
             self.name_label.text  = name
             self.email_label.text = email
-            self.phone_label.text = f'📞  {phone if phone else "Not set"}'
+            self.phone_label.text = phone if phone else 'Not set'
             self.join_label.text  = f'📅  Since {str(join_date)[:10] if join_date else "—"}'
             self.bio_input.text   = bio if bio else ''
             if profile_pic and os.path.exists(profile_pic):
                 self.profile_image.source = profile_pic
                 self.avatar_placeholder.text = ''
+            else:
+                self.avatar_placeholder.text = '👤'
         self.load_timeline()
 
     def choose_profile_pic(self, *_):
@@ -1032,25 +1292,25 @@ class ProfileScreen(Screen):
         content.add_widget(fc)
         btn_box = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10))
         sel_btn = make_rounded_button('✅  Select', PRIMARY, height=46)
-        can_btn = make_rounded_button('Cancel', PRIMARY_LIGHT,
-                                      text_color=PRIMARY_DARK, height=46)
+        can_btn = make_rounded_button('Cancel', PRIMARY_LIGHT, text_color=PRIMARY_DARK, height=46)
         btn_box.add_widget(sel_btn); btn_box.add_widget(can_btn)
         content.add_widget(btn_box)
-        popup = Popup(title='Choose Profile Picture', content=content,
-                      size_hint=(0.9, 0.9))
+        popup = Popup(title='Choose Profile Picture', content=content, size_hint=(0.9, 0.9))
+        
         def select_file(*_):
             if fc.selection:
                 src = fc.selection[0]
                 email = get_user_email(current_user)
-                dst = os.path.join(PROFILE_PICS_DIR,
-                                   f"{email}_{os.path.basename(src)}")
+                dst = os.path.join(PROFILE_PICS_DIR, f"{email}_{os.path.basename(src)}")
                 try:
                     shutil.copy(src, dst)
                     update_profile(email, self.bio_input.text, dst)
                     self.profile_image.source = dst
+                    self.avatar_placeholder.text = ''
                     popup.dismiss()
                 except Exception as e:
                     print(f"Copy error: {e}")
+        
         sel_btn.bind(on_press=select_file)
         can_btn.bind(on_press=popup.dismiss)
         popup.open()
@@ -1059,6 +1319,7 @@ class ProfileScreen(Screen):
         email = get_user_email(current_user)
         if update_profile(email, self.bio_input.text.strip()):
             self.bio_input.hint_text = '✅  Bio saved!'
+            Clock.schedule_once(lambda dt: setattr(self.bio_input, 'hint_text', 'Tell the community about yourself...'), 2)
 
     def post_timeline(self, *_):
         email = get_user_email(current_user)
@@ -1070,36 +1331,28 @@ class ProfileScreen(Screen):
     def load_timeline(self):
         self.tl_layout.clear_widgets()
         email = get_user_email(current_user)
-        if not email:
-            return
+        if not email: return
         posts = get_timeline_posts(email)
         if posts:
-            post_icons = ['>', '>>', '>', '>>', '>', '>>', '>', '>>']
             for i, (text, timestamp) in enumerate(posts):
                 time_str = str(timestamp)[:16]
-                row = BoxLayout(size_hint_y=None, height=dp(54),
+                row = BoxLayout(size_hint_y=None, height=dp(58),
                                 spacing=dp(8), padding=[dp(4), dp(4)])
                 with row.canvas.before:
                     Color(*ACCENT, 0.08)
-                    row._bg = RoundedRectangle(pos=row.pos, size=row.size,
-                                               radius=[dp(8)])
+                    row._bg = RoundedRectangle(pos=row.pos, size=row.size, radius=[dp(8)])
                 row.bind(pos=lambda w, v: setattr(w._bg, 'pos', v),
                          size=lambda w, v: setattr(w._bg, 'size', v))
-
-                icon_lbl = Label(text=post_icons[i % len(post_icons)],
-                                 font_size='16sp', size_hint=(None, 1),
-                                 width=dp(28))
                 col = BoxLayout(orientation='vertical')
                 t_lbl = Label(text=text, font_size='13sp', color=TEXT_DARK,
-                              halign='left', valign='middle',
-                              size_hint_y=None, height=dp(26))
+                              halign='left', valign='middle')
                 t_lbl.bind(size=t_lbl.setter('text_size'))
                 d_lbl = Label(text=time_str, font_size='10sp', color=TEXT_MUTED,
                               halign='left', valign='middle',
                               size_hint_y=None, height=dp(18))
                 d_lbl.bind(size=d_lbl.setter('text_size'))
                 col.add_widget(t_lbl); col.add_widget(d_lbl)
-                row.add_widget(icon_lbl); row.add_widget(col)
+                row.add_widget(col)
                 self.tl_layout.add_widget(row)
         else:
             self.tl_layout.add_widget(
@@ -1121,6 +1374,7 @@ class MyApp(App):
             (ViewUsersScreen, 'view'),
             (ChatScreen,      'chat'),
             (ProfileScreen,   'profile'),
+            (AdminScreen,     'admin'),
         ]:
             s = cls(name=name)
             s.build()
