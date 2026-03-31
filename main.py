@@ -1036,102 +1036,120 @@ class ViewUsersScreen(Screen):
 # ── Chat Room ─────────────────────────────────────────────────────────────────
 class ChatScreen(Screen):
     def build(self):
-        root = FloatLayout()
+        root = BoxLayout(orientation='vertical')
 
-        self.chat_ui = BoxLayout(orientation='vertical',
-                                 size_hint=(1, 1), pos_hint={'x': 0, 'y': 0})
-
+        # ── Header ────────────────────────────────────────────────────────────
         hero = HeroHeader(icon='💬', title='Chat Room', subtitle='Live community messages',
                           bg1=ACCENT, bg2=PRIMARY_DARK, height=160)
-        self.chat_ui.add_widget(hero)
+        root.add_widget(hero)
 
-        chat_inner = BoxLayout(orientation='vertical',
-                               padding=[dp(12), dp(6), dp(12), dp(6)], spacing=dp(6))
-
+        # ── Live indicator ────────────────────────────────────────────────────
         top_row = BoxLayout(size_hint_y=None, height=dp(24), padding=[dp(4), 0])
         top_row.add_widget(Label(text='*  Live', font_size='11sp', color=ACCENT,
                                  halign='left', valign='middle'))
-        chat_inner.add_widget(top_row)
+        root.add_widget(top_row)
 
+        # ── Message list ──────────────────────────────────────────────────────
         self.scroll = ScrollView(size_hint_y=1)
         self.chat_layout = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(8))
         self.chat_layout.bind(minimum_height=self.chat_layout.setter('height'))
         self.scroll.add_widget(self.chat_layout)
-        chat_inner.add_widget(self.scroll)
+        root.add_widget(self.scroll)
 
-        input_card = make_card(padding=8, spacing=6)
-        input_card.size_hint_y = None; input_card.height = dp(56)
-        input_row = BoxLayout(spacing=dp(8))
-
-        self.msg_input = TextInput(
-            hint_text='Type a message...', multiline=False,
-            background_color=(1, 1, 1, 1), background_normal='', background_active='',
-            foreground_color=(0.05, 0.10, 0.25, 1), hint_text_color=(0.55, 0.60, 0.70, 1),
-            cursor_color=PRIMARY, padding=[dp(14), dp(13)], font_size='14sp'
-        )
-        send_btn = make_rounded_button('Send', PRIMARY, height=44, radius=22)
-        send_btn.size_hint_x = 0.28
-        send_btn.bind(on_press=self.send_message)
-        clear_btn = make_rounded_button('🗑 All', DANGER, height=44, radius=22)
-        clear_btn.size_hint_x = 0.25
-        clear_btn.bind(on_press=self.clear_chat_admin)
-        input_row.add_widget(self.msg_input); input_row.add_widget(send_btn)
-        input_row.add_widget(clear_btn)
-        input_card.add_widget(input_row)
-        chat_inner.add_widget(input_card)
-
-        b_back = make_rounded_button('  Back', (1,1,1,1), text_color=PRIMARY_DARK, height=44)
-        b_back.bind(on_press=lambda *_: setattr(self.manager, 'current', 'home'))
-        chat_inner.add_widget(b_back)
-
-        self.chat_ui.add_widget(chat_inner)
-        root.add_widget(self.chat_ui)
-
-        self.access_denied = BoxLayout(orientation='vertical', padding=dp(30), spacing=dp(16),
-                                       size_hint=(1, 1), pos_hint={'x': 0, 'y': 0})
-        with self.access_denied.canvas.before:
-            Color(*BG_LIGHT)
-            self.access_denied._bg = Rectangle(pos=self.access_denied.pos, size=self.access_denied.size)
-        self.access_denied.bind(
+        # ── Input row ─────────────────────────────────────────────────────────
+        input_row = BoxLayout(size_hint_y=None, height=dp(56),
+                              padding=[dp(8), dp(6)], spacing=dp(8))
+        with input_row.canvas.before:
+            Color(*CARD_BG)
+            input_row._bg = Rectangle(pos=input_row.pos, size=input_row.size)
+        input_row.bind(
             pos=lambda w, v: setattr(w._bg, 'pos', v),
             size=lambda w, v: setattr(w._bg, 'size', v)
         )
-        self.access_denied.add_widget(Label(text='⏳', font_size='48sp', size_hint_y=None, height=dp(70)))
-        self.access_denied.add_widget(Label(
-            text='Your account is pending\nadmin approval.',
-            font_size='16sp', bold=True, color=WARNING,
-            halign='center', size_hint_y=None, height=dp(60)
-        ))
-        self.access_denied.add_widget(Label(
-            text='Once approved, you will be able\nto join the community chat room.',
-            font_size='13sp', color=TEXT_MUTED, halign='center', size_hint_y=None, height=dp(50)
-        ))
-        ad_back = make_rounded_button('  Back to Home', (1,1,1,1), text_color=PRIMARY_DARK, height=48)
-        ad_back.bind(on_press=lambda *_: setattr(self.manager, 'current', 'home'))
-        self.access_denied.add_widget(ad_back)
-        self.access_denied.opacity = 0
-        self.access_denied.disabled = True
-        root.add_widget(self.access_denied)
+        self.msg_input = TextInput(
+            hint_text='Type a message...', multiline=False,
+            background_color=(1, 1, 1, 1), background_normal='', background_active='',
+            foreground_color=(0.05, 0.10, 0.25, 1),
+            hint_text_color=(0.55, 0.60, 0.70, 1),
+            cursor_color=PRIMARY, padding=[dp(12), dp(12)], font_size='14sp'
+        )
+        send_btn = make_rounded_button('Send', PRIMARY, height=42, radius=20)
+        send_btn.size_hint_x = 0.26
+        send_btn.bind(on_press=self.send_message)
+
+        # Admin-only delete-all button (added/removed in on_enter)
+        self.clear_btn = make_rounded_button('🗑', DANGER, height=42, radius=20)
+        self.clear_btn.size_hint_x = 0.16
+        self.clear_btn.bind(on_press=self.clear_chat_admin)
+
+        input_row.add_widget(self.msg_input)
+        input_row.add_widget(send_btn)
+        self._input_row = input_row
+        root.add_widget(input_row)
+
+        # ── Back button ───────────────────────────────────────────────────────
+        b_back = make_rounded_button('  Back', (1, 1, 1, 1), text_color=PRIMARY_DARK, height=44)
+        b_back.bind(on_press=lambda *_: setattr(self.manager, 'current', 'home'))
+        root.add_widget(b_back)
 
         self.add_widget(root)
 
     def on_enter(self):
-        Clock.unschedule(self.load_messages)
-        if not current_user or (not is_admin and not is_approved):
-            self.chat_ui.opacity = 0; self.chat_ui.disabled = True
-            self.access_denied.opacity = 1; self.access_denied.disabled = False
+        Clock.unschedule(self._auto_refresh_chat)
+        self._last_msg_hash = None
+
+        _allowed = bool(current_user) and (bool(is_admin) or bool(is_approved))
+        _is_adm  = bool(is_admin)
+
+        # 🗑 clear button — admin only
+        if _is_adm:
+            if self.clear_btn not in self._input_row.children:
+                self._input_row.add_widget(self.clear_btn)
         else:
-            self.access_denied.opacity = 0; self.access_denied.disabled = True
-            self.chat_ui.opacity = 1; self.chat_ui.disabled = False
-            self.load_messages()
-            Clock.schedule_interval(self.load_messages, 2)
+            if self.clear_btn in self._input_row.children:
+                self._input_row.remove_widget(self.clear_btn)
+
+        # Show appropriate hint in the text input
+        if not current_user:
+            self.msg_input.hint_text = 'Please login first...'
+            self.msg_input.disabled = True
+        elif not _allowed:
+            self.msg_input.hint_text = '⏳  Awaiting admin approval...'
+            self.msg_input.disabled = True
+        else:
+            self.msg_input.hint_text = 'Type a message...'
+            self.msg_input.disabled = False
+
+        if not _allowed:
+            self.chat_layout.clear_widgets()
+            return
+
+        self.load_messages()
+        Clock.schedule_interval(self._auto_refresh_chat, 3)
 
     def on_leave(self):
-        Clock.unschedule(self.load_messages)
+        Clock.unschedule(self._auto_refresh_chat)
+
+    def _auto_refresh_chat(self, dt):
+        if not self.msg_input.focus:
+            self.load_messages()
 
     def load_messages(self, *_):
-        self.chat_layout.clear_widgets()
         messages = get_messages()
+        msg_hash = hash(tuple((m[0], m[1], str(m[2])) for m in messages))
+        if msg_hash == getattr(self, '_last_msg_hash', None):
+            return
+        self._last_msg_hash = msg_hash
+        self.chat_layout.clear_widgets()
+
+        if not messages:
+            empty = Label(text='No messages yet — say hello! 👋',
+                          font_size='13sp', color=TEXT_MUTED,
+                          size_hint_y=None, height=dp(60), halign='center')
+            empty.bind(size=empty.setter('text_size'))
+            self.chat_layout.add_widget(empty)
+            return
+
         for msg_idx, (user_name, message, timestamp) in enumerate(messages):
             is_me = (user_name == current_user)
             time_str = str(timestamp)[11:16]
@@ -1161,9 +1179,9 @@ class ChatScreen(Screen):
             )
             admin_badge = ' 👑' if user_name == ADMIN_NAME else ''
             dot = '🔵' if is_me else '●'
-            name_lbl = Label(text=f"{dot} {user_name}{admin_badge}", font_size='11sp', bold=True,
-                             color=name_color, size_hint_y=None, height=dp(20),
-                             halign='left', valign='middle')
+            name_lbl = Label(text=f"{dot} {user_name}{admin_badge}",
+                             font_size='11sp', bold=True, color=name_color,
+                             size_hint_y=None, height=dp(20), halign='left', valign='middle')
             name_lbl.bind(size=name_lbl.setter('text_size'))
 
             msg_row = BoxLayout(size_hint_y=None, height=dp(26))
@@ -1188,22 +1206,41 @@ class ChatScreen(Screen):
         self.scroll.scroll_y = 0
 
     def delete_msg(self, idx):
-        delete_message_by_index(idx); self.load_messages()
+        delete_message_by_index(idx)
+        self._last_msg_hash = None
+        self.load_messages()
 
     def send_message(self, *_):
         msg = self.msg_input.text.strip()
         if msg and save_message(current_user, msg):
-            self.msg_input.text = ''; self.load_messages()
+            self.msg_input.text = ''
+            self._last_msg_hash = None
+            self.load_messages()
 
     def clear_chat_admin(self, *_):
         if not is_admin: return
-        try:
-            conn = sqlite3.connect(DB_FILE, timeout=10)
-            c = conn.cursor(); c.execute("DELETE FROM messages")
-            conn.commit(); conn.close()
-            log_admin_action(current_user_email, "CLEAR_ALL_MESSAGES")
+        content = BoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12))
+        content.add_widget(Label(text='Delete ALL messages?\nThis cannot be undone!',
+                                 color=DANGER, halign='center', font_size='14sp'))
+        btn_row = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(48))
+        yes_btn = make_rounded_button('Yes, Delete All', DANGER, height=44)
+        no_btn  = make_rounded_button('Cancel', (1, 1, 1, 1), text_color=PRIMARY_DARK, height=44)
+        btn_row.add_widget(yes_btn); btn_row.add_widget(no_btn)
+        content.add_widget(btn_row)
+        popup = Popup(title='Confirm', content=content, size_hint=(0.85, 0.35))
+
+        def do_clear(*_):
+            try:
+                conn = sqlite3.connect(DB_FILE, timeout=10)
+                c = conn.cursor(); c.execute("DELETE FROM messages")
+                conn.commit(); conn.close()
+                log_admin_action(current_user_email, "CLEAR_ALL_MESSAGES")
+            except: pass
+            self._last_msg_hash = None
+            popup.dismiss()
             self.load_messages()
-        except Exception as e: print(f"Clear error: {e}")
+
+        yes_btn.bind(on_press=do_clear); no_btn.bind(on_press=popup.dismiss); popup.open()
 
 
 # ── Admin Panel ───────────────────────────────────────────────────────────────
